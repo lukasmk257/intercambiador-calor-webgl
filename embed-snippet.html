@@ -1,0 +1,198 @@
+<!--
+  Unity WebGL embed para systeme.io (bloque "Código HTML" / Raw HTML).
+  - Autocontenido: sin TemplateData/*.png, sin dependencias externas.
+  - CSS con prefijo .fxu- para no chocar con los estilos del funnel de systeme.io.
+  - Click-to-play: el build (~50 MB) solo se descarga cuando el usuario pulsa jugar,
+    así no penaliza la carga/LCP de la página de ventas.
+  ÚNICA LÍNEA A EDITAR: FXU_BASE_URL (carpeta HTTPS que contiene /Build).
+-->
+<div class="fxu-root" id="fxu-root">
+  <div class="fxu-stage">
+    <canvas class="fxu-canvas" id="fxu-canvas" tabindex="-1"></canvas>
+
+    <button type="button" class="fxu-play" id="fxu-play" aria-label="Iniciar experiencia">
+      <span class="fxu-play-icon" aria-hidden="true"></span>
+      <span class="fxu-play-text">Jugar</span>
+      <span class="fxu-play-sub">Descarga aprox. 50 MB</span>
+    </button>
+
+    <div class="fxu-loading" id="fxu-loading" hidden>
+      <div class="fxu-bar"><div class="fxu-bar-fill" id="fxu-bar-fill"></div></div>
+      <div class="fxu-pct" id="fxu-pct">0%</div>
+    </div>
+
+    <div class="fxu-banner" id="fxu-banner" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="fxu-footer">
+    <span class="fxu-title"></span>
+    <button type="button" class="fxu-fs" id="fxu-fs" aria-label="Pantalla completa" disabled>
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 3h7v2H5v5H3V3zm11 0h7v7h-2V5h-5V3zM3 14h2v5h5v2H3v-7zm16 0h2v7h-7v-2h5v-5z"/></svg>
+    </button>
+  </div>
+</div>
+
+<style>
+  .fxu-root{--fxu-bg:#231F20;--fxu-accent:#2bb5ec;width:100%;max-width:900px;margin:0 auto;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;box-sizing:border-box}
+  .fxu-root *,.fxu-root *::before,.fxu-root *::after{box-sizing:border-box}
+  /* 900x500 original -> relación 9:5 responsive */
+  .fxu-stage{position:relative;width:100%;aspect-ratio:9/5;background:var(--fxu-bg);overflow:hidden;border-radius:6px}
+  .fxu-canvas{display:block;width:100%!important;height:100%!important;background:var(--fxu-bg);outline:none}
+  .fxu-play{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;width:100%;height:100%;margin:0;padding:0;border:0;background:radial-gradient(circle at center,rgba(255,255,255,.06),rgba(0,0,0,.35));color:#fff;cursor:pointer}
+  .fxu-play-icon{width:72px;height:72px;border-radius:50%;background:var(--fxu-accent);position:relative;transition:transform .2s}
+  .fxu-play-icon::after{content:"";position:absolute;left:29px;top:22px;border-style:solid;border-width:14px 0 14px 22px;border-color:transparent transparent transparent #fff}
+  .fxu-play:hover .fxu-play-icon,.fxu-play:focus-visible .fxu-play-icon{transform:scale(1.08)}
+  .fxu-play-text{font-size:20px;font-weight:600;letter-spacing:.02em}
+  .fxu-play-sub{font-size:12px;opacity:.65}
+  .fxu-loading{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(60%,280px);text-align:center;color:#fff}
+  .fxu-loading[hidden],.fxu-play[hidden]{display:none}
+  .fxu-bar{height:8px;border-radius:4px;background:rgba(255,255,255,.15);overflow:hidden}
+  .fxu-bar-fill{height:100%;width:0;background:var(--fxu-accent);transition:width .15s linear}
+  .fxu-pct{margin-top:8px;font-size:13px;opacity:.8;font-variant-numeric:tabular-nums}
+  .fxu-banner{position:absolute;left:50%;top:5%;transform:translateX(-50%);max-width:90%;display:none;z-index:2;font-size:14px}
+  .fxu-banner>div{padding:10px 14px;border-radius:4px;background:#fff;color:#111;margin-bottom:6px;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+  .fxu-banner>.fxu-warn{background:#ffd84d}
+  .fxu-banner>.fxu-err{background:#d93025;color:#fff}
+  .fxu-footer{display:flex;align-items:center;justify-content:space-between;padding:6px 2px}
+  .fxu-title{font-size:16px;color:inherit}
+  .fxu-fs{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;padding:0;border:0;border-radius:4px;background:var(--fxu-accent);color:#fff;cursor:pointer}
+  .fxu-fs:disabled{opacity:.4;cursor:default}
+</style>
+
+<script>
+(function () {
+  "use strict";
+
+  // ===== CONFIGURACIÓN =====
+  // Carpeta HTTPS donde re-alojaste el build (debe contener /Build/<PREFIJO>.*). Sin barra final.
+  // La URL es visible en el código fuente: usa una ruta neutra.
+  var FXU_BASE_URL = "https://lukasmk257.github.io/intercambiador-calor-webgl";
+  var TITLE = "Intercambiador de calor"; // texto del pie (vacío = oculto)
+  var FILE_PREFIX = "2"; // prefijo de los archivos de /Build: 1.loader.js, 1.data.unityweb, ...
+  var AUTOSTART = false; // true = descarga al cargar la página (no recomendado: 50 MB)
+  var LOCK_PAGE_SCROLL = true; // evita que rueda/flechas/espacio muevan la página mientras juegas
+  // =========================
+
+  var root = document.getElementById("fxu-root");
+  // systeme.io puede re-ejecutar bloques en el editor/preview: evita doble init.
+  if (!root || root.dataset.fxuInit) return;
+  root.dataset.fxuInit = "1";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var canvas = $("fxu-canvas"), playBtn = $("fxu-play"), loading = $("fxu-loading"),
+      barFill = $("fxu-bar-fill"), pct = $("fxu-pct"), banner = $("fxu-banner"), fsBtn = $("fxu-fs");
+
+  var titleEl = root.querySelector(".fxu-title");
+  titleEl.textContent = TITLE;
+  titleEl.hidden = !TITLE;
+
+  var build = FXU_BASE_URL.replace(/\/+$/, "") + "/Build";
+
+  // Evita que la rueda y las teclas de juego hagan scroll de la página mientras el canvas tiene foco.
+  if (LOCK_PAGE_SCROLL) {
+    var active = false;
+    root.addEventListener("pointerenter", function () { active = true; });
+    root.addEventListener("pointerleave", function () { active = false; });
+    canvas.addEventListener("wheel", function (e) { e.preventDefault(); }, { passive: false });
+    window.addEventListener("keydown", function (e) {
+      if (active && /^(ArrowUp|ArrowDown|ArrowLeft|ArrowRight| )$/.test(e.key) && document.activeElement === canvas) e.preventDefault();
+    });
+  }
+  var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  // Misma firma que unityShowBanner del template: el loader la invoca para warnings/errores.
+  function showBanner(msg, type) {
+    var div = document.createElement("div");
+    div.textContent = String(msg); // textContent: el loader puede reenviar texto de excepciones
+    if (type === "error") div.className = "fxu-err";
+    else if (type === "warning") div.className = "fxu-warn";
+    banner.appendChild(div);
+    banner.style.display = "block";
+    if (type !== "error") {
+      setTimeout(function () {
+        if (div.parentNode) banner.removeChild(div);
+        if (!banner.children.length) banner.style.display = "none";
+      }, 5000);
+    }
+  }
+
+  function supportsWebGL() {
+    try {
+      var c = document.createElement("canvas");
+      return !!(window.WebGL2RenderingContext && c.getContext("webgl2")) || !!c.getContext("webgl");
+    } catch (e) { return false; }
+  }
+
+  // Carga el loader una sola vez aunque haya varios embeds en la página.
+  function loadLoader() {
+    if (window.createUnityInstance) return Promise.resolve();
+    if (window.__fxuLoaderPromise) return window.__fxuLoaderPromise;
+    window.__fxuLoaderPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = build + "/" + FILE_PREFIX + ".loader.js";
+      s.async = true;
+      s.onload = resolve;
+      s.onerror = function () { reject(new Error("No se pudo cargar " + s.src + " (¿URL/HTTPS correctos?)")); };
+      document.head.appendChild(s);
+    });
+    return window.__fxuLoaderPromise;
+  }
+
+  function start() {
+    if (/TU-HOSTING\.example\.com/.test(FXU_BASE_URL)) {
+      showBanner("Configura FXU_BASE_URL con la URL HTTPS de tu hosting.", "error");
+      playBtn.addEventListener("click", start, { once: true }); // permite reintentar tras corregir
+      return;
+    }
+    playBtn.hidden = true;
+    loading.hidden = false;
+
+    if (!supportsWebGL()) {
+      loading.hidden = true;
+      showBanner("Tu navegador no soporta WebGL.", "error");
+      return;
+    }
+
+    var config = {
+      dataUrl: build + "/" + FILE_PREFIX + ".data.unityweb",
+      frameworkUrl: build + "/" + FILE_PREFIX + ".framework.js.unityweb",
+      codeUrl: build + "/" + FILE_PREFIX + ".wasm.unityweb",
+      streamingAssetsUrl: FXU_BASE_URL.replace(/\/+$/, "") + "/StreamingAssets",
+      companyName: "Estudiofuture",
+      productName: "9",
+      productVersion: "0.718",
+      showBanner: showBanner
+    };
+    if (isMobile) {
+      config.devicePixelRatio = 1; // ahorra fillrate en móvil
+      showBanner("Experiencia optimizada para escritorio; en móvil puede ir lenta.", "warning");
+    }
+
+    loadLoader()
+      .then(function () {
+        return window.createUnityInstance(canvas, config, function (p) {
+          var v = Math.round(p * 100);
+          barFill.style.width = v + "%";
+          pct.textContent = v + "%";
+        });
+      })
+      .then(function (instance) {
+        loading.hidden = true;
+        fsBtn.disabled = false;
+        fsBtn.onclick = function () { instance.SetFullscreen(1); };
+        canvas.focus();
+      })
+      .catch(function (err) {
+        loading.hidden = true;
+        playBtn.hidden = false; // permite reintentar
+        playBtn.addEventListener("click", start, { once: true });
+        window.__fxuLoaderPromise = null; // si falló el loader, vuelve a intentarlo
+        showBanner((err && err.message) || err || "Error al iniciar.", "error");
+        if (window.console) console.error("[fxu]", err);
+      });
+  }
+
+  playBtn.addEventListener("click", start, { once: true });
+  if (AUTOSTART) start();
+})();
+</script>
